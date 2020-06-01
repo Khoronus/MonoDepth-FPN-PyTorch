@@ -25,7 +25,9 @@ class RMSE_log(nn.Module):
     def forward(self, fake, real):
         if not fake.shape == real.shape:
             _,_,H,W = real.shape
-            fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('RMSE_logforward: {} {}'.format(H, W))
+            fake = F.interpolate(fake, size=(H,W), mode='bilinear', align_corners=True)
         loss = torch.sqrt( torch.mean( torch.abs(torch.log(real)-torch.log(fake)) ** 2 ) )
         return loss
 
@@ -36,7 +38,9 @@ class L1(nn.Module):
     def forward(self, fake, real):
         if not fake.shape == real.shape:
             _,_,H,W = real.shape
-            fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('L1forward: {} {}'.format(H, W))
+            fake = F.interpolate(fake, size=(H,W), mode='bilinear', align_corners=True)
         loss = torch.mean( torch.abs(10.*real-10.*fake) )
         return loss
 
@@ -47,7 +51,9 @@ class L1_log(nn.Module):
     def forward(self, fake, real):
         if not fake.shape == real.shape:
             _,_,H,W = real.shape
-            fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('L1_logforward: {} {}'.format(H, W))
+            fake = F.interpolate(fake, size=(H,W), mode='bilinear', align_corners=True)
         loss = torch.mean( torch.abs(torch.log(real)-torch.log(fake)) )
         return loss
     
@@ -60,7 +66,9 @@ class BerHu(nn.Module):
         mask = real>0
         if not fake.shape == real.shape:
             _,_,H,W = real.shape
-            fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('BerHuforward: {} {}'.format(H, W))
+            fake = F.interpolate(fake, size=(H,W), mode='bilinear', align_corners=True)
         fake = fake * mask
         diff = torch.abs(real-fake)
         delta = self.threshold * torch.max(diff).data.cpu().numpy()[0]
@@ -80,7 +88,9 @@ class RMSE(nn.Module):
     def forward(self, fake, real):
         if not fake.shape == real.shape:
             _,_,H,W = real.shape
-            fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('RMSE_logforward: {} {}'.format(H, W))
+            fake = F.interpolate(fake, size=(H,W), mode='bilinear', align_corners=True)
         loss = torch.sqrt( torch.mean( torch.abs(10.*real-10.*fake) ** 2 ) )
         return loss
 
@@ -90,6 +100,14 @@ class GradLoss(nn.Module):
     
     # L1 norm
     def forward(self, grad_fake, grad_real):
+
+        if not grad_fake.shape == grad_real.shape:
+            _,H,W = grad_real.shape
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('GradLoss_logforward: {} {}'.format(H, W))
+            grad_fake = torch.unsqueeze(grad_fake, 0)
+            grad_fake = F.interpolate(grad_fake, size=(H,W), mode='bilinear', align_corners=True)
+            grad_fake = torch.squeeze(grad_fake, 0)
         
         return torch.sum( torch.mean( torch.abs(grad_real-grad_fake) ) )
 
@@ -99,6 +117,15 @@ class NormalLoss(nn.Module):
         super(NormalLoss, self).__init__()
     
     def forward(self, grad_fake, grad_real):
+
+        if not grad_fake.shape == grad_real.shape:
+            _,H,W = grad_real.shape
+            #fake = F.upsample(fake, size=(H,W), mode='bilinear')
+            print('NormalLoss_logforward: {} {}'.format(H, W))
+            grad_fake = torch.unsqueeze(grad_fake, 0)
+            grad_fake = F.interpolate(grad_fake, size=(H,W), mode='bilinear', align_corners=True)
+            grad_fake = torch.squeeze(grad_fake, 0)
+
         prod = ( grad_fake[:,:,None,:] @ grad_real[:,:,:,None] ).squeeze(-1).squeeze(-1)
         fake_norm = torch.sqrt( torch.sum( grad_fake**2, dim=-1 ) )
         real_norm = torch.sqrt( torch.sum( grad_real**2, dim=-1 ) )
@@ -131,6 +158,8 @@ def adjust_learning_rate(optimizer, decay=0.1):
 
 
 NUM_EPOCHS = 10
+DOUBLE_BIAS = 0.001
+WEIGHT_DECAY = 0.001
 
 def parse_args():
     """
@@ -284,13 +313,47 @@ class sampler(Sampler):
 def collate_fn(data):
     imgs, depths = zip(*data)
     B = len(imgs)
-    im_batch = torch.ones((B,3,376,1242))
-    d_batch = torch.ones((B,1,376,1242))
+    #im_batch = torch.ones((B,3,376,1242))
+    #d_batch = torch.ones((B,1,376,1242))
+    im_batch = torch.ones((B,3,720,1280))
+    d_batch = torch.ones((B,1,720,1280))
     for ind in range(B):
         im, depth = imgs[ind], depths[ind]
-        im_batch[ind, :, -im.shape[1]:, :im.shape[2]] = im
-        d_batch[ind, :, -depth.shape[1]:, :depth.shape[2]] = depth
+        print('ind: {} | {} {}'.format(ind, im.shape, depth.shape))
+        #im_batch[ind, :, im.shape[1]:, :im.shape[2]] = im
+        #d_batch[ind, :, depth.shape[1]:, :depth.shape[2]] = depth
+        im_batch[ind, :, :, :] = im
+        d_batch[ind, :, :, :] = depth
     return im_batch, d_batch
+
+def collate2_fn(data):
+    imgs, depths = zip(*data)
+    B = len(imgs)
+    H = 180
+    W = 320
+    #im_batch = torch.ones((B,3,376,1242))
+    #d_batch = torch.ones((B,1,376,1242))
+    im_batch = torch.ones((B,3,H,W))
+    d_batch = torch.ones((B,1,H,W))
+    for ind in range(B):
+        im, depth = imgs[ind], depths[ind]
+        print('ind: {} | {} {}'.format(ind, im.shape, depth.shape))
+        #im_batch[ind, :, im.shape[1]:, :im.shape[2]] = im
+        #d_batch[ind, :, depth.shape[1]:, :depth.shape[2]] = depth
+
+        im = torch.unsqueeze(im, 0)
+        depth = torch.unsqueeze(depth, 0)
+        depth = torch.unsqueeze(depth, 0)
+        im = F.interpolate(im, size=(H,W), mode='bilinear', align_corners=True)
+        depth = F.interpolate(depth, size=(H,W), mode='bilinear', align_corners=True)
+        im = torch.squeeze(im, 0)
+        depth = torch.squeeze(depth, 0)
+        depth = torch.squeeze(depth, 0)
+
+        im_batch[ind, :, :, :] = im
+        d_batch[ind, :, :, :] = depth
+    return im_batch, d_batch
+
 
 if __name__ == '__main__':
 
@@ -401,16 +464,24 @@ if __name__ == '__main__':
         for step in range(iters_per_epoch):
             start = time.time()
             data = train_data_iter.next()
+
+            print('data: {}'.format(data[0].size()))
             
-            img.data.resize_(data[0].size()).copy_(data[0])
-            z.data.resize_(data[1].size()).copy_(data[1])
+            with torch.no_grad():
+                img.resize_(data[0].size()).copy_(data[0])
+                z.resize_(data[1].size()).copy_(data[1])
 
             optimizer.zero_grad()
             z_fake = i2d(img)
+            z = F.interpolate(z, size=(z_fake.shape[2],z_fake.shape[3]), mode='bilinear', align_corners=True)  # resize new line to reduce the computation time
             depth_loss = depth_criterion(z_fake, z)
             
+            print('z: {} {}'.format(z_fake.shape, z.shape))
+
             grad_real, grad_fake = imgrad_yx(z), imgrad_yx(z_fake)
-            grad_loss = grad_criterion(grad_fake, grad_real)     * grad_factor * (epoch>3)
+
+            print('grad: {} {}'.format(grad_fake.shape, grad_real.shape))
+            grad_loss = grad_criterion(grad_fake, grad_real)     * grad_factor * (epoch>5)
             normal_loss = normal_criterion(grad_fake, grad_real) * normal_factor * (epoch>7)
             
             loss = depth_loss + grad_loss + normal_loss

@@ -94,7 +94,8 @@ class I2D(nn.Module):
         So we choose bilinear upsample which supports arbitrary output sizes.
         '''
         _,_,H,W = y.size()
-        return F.upsample(x, size=(H,W), mode='bilinear') + y
+        #return F.upsample(x, size=(H,W), mode='bilinear') + y
+        return F.interpolate(x, size=(H,W), mode='bilinear', align_corners=True) + y
 
     def forward(self, x):
         _,_,H,W = x.size()
@@ -118,7 +119,8 @@ class I2D(nn.Module):
         # Top-down predict and refine
         d5, d4, d3, d2 = self.up1(self.agg1(p5)), self.up2(self.agg2(p4)), self.up3(self.agg3(p3)), self.agg4(p2)
         _,_,H,W = d2.size()
-        vol = torch.cat( [ F.upsample(d, size=(H,W), mode='bilinear') for d in [d5,d4,d3,d2] ], dim=1 )
+        #vol = torch.cat( [ F.upsample(d, size=(H,W), mode='bilinear') for d in [d5,d4,d3,d2] ], dim=1 )
+        vol = torch.cat( [ F.interpolate(d, size=(H,W), mode='bilinear', align_corners=True) for d in [d5,d4,d3,d2] ], dim=1 )
         
         # return self.predict2( self.up4(self.predict1(vol)) )
         return self.predict2( self.predict1(vol) )     # img : depth = 4 : 1 
