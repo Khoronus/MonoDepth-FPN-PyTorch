@@ -1,0 +1,6 @@
+train
+python main_custom_fpn.py --cuda --bs 1 --epochs 30
+
+
+inference (only cpu for now)
+python main_custom_fpn_inference.py --bs 1 --checkpoint 29 --r 1 --checkepoch 29 --epoch 40

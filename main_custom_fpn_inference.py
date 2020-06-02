@@ -17,6 +17,7 @@ from collections import Counter
 import matplotlib, cv2
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import cv2
 
 class RMSE_log(nn.Module):
     def __init__(self):
@@ -449,69 +450,45 @@ if __name__ == '__main__':
     
     for epoch in range(args.start_epoch, args.max_epochs):
         
-        # setting to train mode
-        i2d.train()
-        start = time.time()
-        if epoch % (args.lr_decay_step + 1) == 0:
-            adjust_learning_rate(optimizer, args.lr_decay_gamma)
-            lr *= args.lr_decay_gamma
+        # setting to eval mode
+        i2d.eval()
 
-        img = Variable(torch.FloatTensor(1))
-        z = Variable(torch.FloatTensor(1))
+        img = Variable(torch.FloatTensor(1), volatile=True)
         if args.cuda:
             img = img.cuda()
-            z = z.cuda()
-        
-        train_data_iter = iter(train_dataloader)
-        
-        for step in range(iters_per_epoch):
-            start = time.time()
-            data = train_data_iter.next()
 
-            #print('data: {}'.format(data[0].size()))
-            
+        print('evaluating...')
+
+        eval_loss = 0
+        rmse_accum = 0
+        count = 0
+        eval_data_iter = iter(eval_dataloader)
+        
+        for i, data in enumerate(eval_data_iter):
+            print(i,'/',len(eval_data_iter)-1)
+
             with torch.no_grad():
-                img.resize_(data[0].size()).copy_(data[0])
-                z.resize_(data[1].size()).copy_(data[1])
+                if not img.shape == data[0].shape:
+                    #img.resize_(data[0].size()).copy_(data[0])
+                    img.resize_(data[0].size())
+                img.copy_(data[0])
 
-            optimizer.zero_grad()
             z_fake = i2d(img)
-            z = F.interpolate(z, size=(z_fake.shape[2],z_fake.shape[3]), mode='bilinear', align_corners=True)  # resize new line to reduce the computation time
-            depth_loss = depth_criterion(z_fake, z)
-            
-            #print('z: {} {}'.format(z_fake.shape, z.shape))
+            z_fake = F.interpolate(z_fake, size=(img.shape[2],img.shape[3]), mode='bilinear', align_corners=False)  # resize new line to reduce the computation time
+            z_fake = torch.squeeze(z_fake, 0)
+            z_fake = torch.squeeze(z_fake, 0)
+            img = torch.squeeze(img, 0)
+            print(z_fake)
 
-            grad_real, grad_fake = imgrad_yx(z), imgrad_yx(z_fake)
-
-            #print('grad: {} {}'.format(grad_fake.shape, grad_real.shape))
-            grad_loss = grad_criterion(grad_fake, grad_real)     * grad_factor * (epoch>5)
-            normal_loss = normal_criterion(grad_fake, grad_real) * normal_factor * (epoch>7)
-            
-            loss = depth_loss + grad_loss + normal_loss
-            loss.backward()
-            optimizer.step()
-
-            end = time.time()
-
-            # info
-            if step % args.disp_interval == 0:
-
-                print("[epoch %2d][iter %4d] loss: %.4f RMSElog: %.4f grad_loss: %.4f normal_loss: %.4f" \
-                                % (epoch, step, loss, depth_loss, grad_loss, normal_loss))
-#                 print("[epoch %2d][iter %4d] loss: %.4f iRMSE: %.4f" \
-#                                 % (epoch, step, loss, metric))
-        # save model
-        save_name = os.path.join(args.output_dir, 'i2d_{}_{}.pth'.format(args.session, epoch))
-
-        torch.save({'epoch': epoch+1,
-                    'model': i2d.state_dict(), 
-#                     'optimizer': optimizer.state_dict(),
-                   },
-                   save_name)
-
-        print('save model: {}'.format(save_name))
-        print('time elapsed: %fs' % (end - start))
-
-
-       
-
+            img_color = img.cpu().numpy().transpose(1, 2, 0)
+            cv2.imshow('img_color', img_color)
+            img_depth = z_fake.detach().cpu().numpy()
+            cv2.imshow('depth', img_depth)
+            print(img_depth)
+            #waits for user to press any key  
+            #(this is necessary to avoid Python kernel form crashing) 
+            cv2.waitKey(0)  
+            torch.cuda.empty_cache()
+  
+    #closing all open windows  
+    cv2.destroyAllWindows() 
