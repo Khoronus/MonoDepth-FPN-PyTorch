@@ -17,6 +17,9 @@ from collections import Counter
 import matplotlib, cv2
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import cv2
+from torchvision.transforms import Resize, Compose, ToPILImage, ToTensor, RandomHorizontalFlip
+from PIL import Image
 
 class RMSE_log(nn.Module):
     def __init__(self):
@@ -368,29 +371,12 @@ if __name__ == '__main__':
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    # dataset
-    if args.dataset == 'custom':
-        train_dataset = CustomDataset(root='D:/DataSets/RGB2Depth/20200602_112100/') # KittiDataset(train=True)
-        eval_dataset = CustomDataset(root='D:/DataSets/RGB2Depth/20200602_112100/') # KittiDataset(train=False)
-        train_size = len(train_dataset)
-        eval_size = len(eval_dataset)
-        print(train_size, eval_size)
-
-        train_batch_sampler = sampler(train_size, args.bs)
-        eval_batch_sampler = sampler(eval_size, args.bs)
-
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.bs,
-                                shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers)
-        
-        eval_dataloader = torch.utils.data.DataLoader(eval_dataset, batch_size=args.bs,
-                                shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers)
-
-
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     # network initialization
     print('Initializing model...')
-    i2d = I2D(fixed_feature_weights=False)
-    if args.cuda:
-        i2d = i2d.cuda()
+    i2d = I2D(fixed_feature_weights=False).to(device)
+    #if args.cuda:
+    #    i2d = i2d.cuda()
         
     print('Done!')
 
@@ -415,12 +401,6 @@ if __name__ == '__main__':
         optimizer = torch.optim.Adam(params, lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=4e-5)
     elif args.optimizer == "sgd":
         optimizer = torch.optim.SGD(params, lr=lr, momentum=0.9)
-
-    rmse = RMSE()
-    depth_criterion = RMSE_log()
-    grad_criterion = GradLoss()
-    normal_criterion = NormalLoss()
-    eval_metric = RMSE_log()
     
     # resume
     if args.resume:
@@ -440,78 +420,47 @@ if __name__ == '__main__':
         print("loaded checkpoint %s" % (load_name))
         del checkpoint
         torch.cuda.empty_cache()
-
-    # constants
-    iters_per_epoch = int(train_size / args.bs)
     
     grad_factor = 10.
     normal_factor = 1.
-    
-    for epoch in range(args.start_epoch, args.max_epochs):
-        
-        # setting to train mode
-        i2d.train()
-        start = time.time()
-        if epoch % (args.lr_decay_step + 1) == 0:
-            adjust_learning_rate(optimizer, args.lr_decay_gamma)
-            lr *= args.lr_decay_gamma
 
-        img = Variable(torch.FloatTensor(1))
-        z = Variable(torch.FloatTensor(1))
-        if args.cuda:
-            img = img.cuda()
-            z = z.cuda()
-        
-        train_data_iter = iter(train_dataloader)
-        
-        for step in range(iters_per_epoch):
-            start = time.time()
-            data = train_data_iter.next()
+    # setting to eval mode
+    i2d.eval()
 
-            #print('data: {}'.format(data[0].size()))
-            
-            with torch.no_grad():
-                img.resize_(data[0].size()).copy_(data[0])
-                z.resize_(data[1].size()).copy_(data[1])
+    #img = Variable(torch.FloatTensor(1), volatile=True)
+    #if args.cuda:
+    #    img = img.cuda()
 
-            optimizer.zero_grad()
-            z_fake = i2d(img)
-            z = F.interpolate(z, size=(z_fake.shape[2],z_fake.shape[3]), mode='bilinear', align_corners=True)  # resize new line to reduce the computation time
-            depth_loss = depth_criterion(z_fake, z)
-            
-            #print('z: {} {}'.format(z_fake.shape, z.shape))
+    # https://discuss.pytorch.org/t/out-of-memory-error-during-evaluation-but-training-works-fine/12274/3
+    with torch.no_grad():
+        with open('D:/DataSets/RGB2Depth/20200602_112100/train_images.txt') as f:    
+            for line in f:
+                line = line.rstrip('\n')
+                print('line: {}'.format(line))
+                img_in = ToTensor()( Image.open(line) ).to(device)
 
-            grad_real, grad_fake = imgrad_yx(z), imgrad_yx(z_fake)
+                print('evaluating...')
+                #img = torch.from_numpy(img_in.transpose(2, 0, 1)).float().to(device)
+                img = img_in
+                img = torch.unsqueeze(img, 0)
+                print('img {}'.format(img.shape))
 
-            #print('grad: {} {}'.format(grad_fake.shape, grad_real.shape))
-            grad_loss = grad_criterion(grad_fake, grad_real)     * grad_factor * (epoch>5)
-            normal_loss = normal_criterion(grad_fake, grad_real) * normal_factor * (epoch>7)
-            
-            loss = depth_loss + grad_loss + normal_loss
-            loss.backward()
-            optimizer.step()
+                z_fake = i2d(img)
+                z_fake = F.interpolate(z_fake, size=(img.shape[2],img.shape[3]), mode='bilinear', align_corners=False)  # resize new line to reduce the computation time
+                z_fake = torch.squeeze(z_fake, 0)
+                z_fake = torch.squeeze(z_fake, 0)
+                img = torch.squeeze(img, 0)
+                print(z_fake)
 
-            end = time.time()
-
-            # info
-            if step % args.disp_interval == 0:
-
-                print("[epoch %2d][iter %4d] loss: %.4f RMSElog: %.4f grad_loss: %.4f normal_loss: %.4f" \
-                                % (epoch, step, loss, depth_loss, grad_loss, normal_loss))
-#                 print("[epoch %2d][iter %4d] loss: %.4f iRMSE: %.4f" \
-#                                 % (epoch, step, loss, metric))
-        # save model
-        save_name = os.path.join(args.output_dir, 'i2d_{}_{}.pth'.format(args.session, epoch))
-
-        torch.save({'epoch': epoch+1,
-                    'model': i2d.state_dict(), 
-#                     'optimizer': optimizer.state_dict(),
-                   },
-                   save_name)
-
-        print('save model: {}'.format(save_name))
-        print('time elapsed: %fs' % (end - start))
-
-
-       
-
+                img_color = img.cpu().numpy().transpose(1, 2, 0)
+                cv2.imshow('img_color', img_color)
+                img_depth = z_fake.detach().cpu().numpy()
+                cv2.imshow('depth', img_depth)
+                print(img_depth)
+                #waits for user to press any key  
+                #(this is necessary to avoid Python kernel form crashing) 
+                cv2.waitKey(0)  
+                torch.cuda.empty_cache()
+  
+    #closing all open windows  
+    cv2.destroyAllWindows() 

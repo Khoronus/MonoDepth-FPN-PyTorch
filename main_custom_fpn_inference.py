@@ -371,8 +371,8 @@ if __name__ == '__main__':
 
     # dataset
     if args.dataset == 'custom':
-        train_dataset = CustomDataset(root='D:/DataSets/RGB2Depth/20200601_092858/') # KittiDataset(train=True)
-        eval_dataset = CustomDataset(root='D:/DataSets/RGB2Depth/20200601_092858/') # KittiDataset(train=False)
+        train_dataset = CustomDataset(root='D:/DataSets/RGB2Depth/20200602_112100/') # KittiDataset(train=True)
+        eval_dataset = CustomDataset(root='D:/DataSets/RGB2Depth/20200602_112100/') # KittiDataset(train=False)
         train_size = len(train_dataset)
         eval_size = len(eval_dataset)
         print(train_size, eval_size)
