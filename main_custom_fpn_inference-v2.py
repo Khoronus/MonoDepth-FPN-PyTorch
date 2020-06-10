@@ -456,6 +456,7 @@ if __name__ == '__main__':
                 cv2.imshow('img_color', img_color)
                 img_depth = z_fake.detach().cpu().numpy()
                 cv2.imshow('depth', img_depth)
+                cv2.imwrite('depth.png', img_depth * 255)
                 print(img_depth)
                 #waits for user to press any key  
                 #(this is necessary to avoid Python kernel form crashing) 
