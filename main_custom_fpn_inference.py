@@ -474,7 +474,7 @@ if __name__ == '__main__':
                 img.copy_(data[0])
 
             z_fake = i2d(img)
-            z_fake = F.interpolate(z_fake, size=(img.shape[2],img.shape[3]), mode='bilinear', align_corners=False)  # resize new line to reduce the computation time
+            z_fake = F.interpolate(z_fake, size=(img.shape[2],img.shape[3]), mode='bilinear', align_corners=True)  # resize new line to reduce the computation time
             z_fake = torch.squeeze(z_fake, 0)
             z_fake = torch.squeeze(z_fake, 0)
             img = torch.squeeze(img, 0)
